@@ -37,7 +37,7 @@ func (d *decodeCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{}
 	token, err := decodeJWT(jwtStr, d.certPath)
 	if err != nil {
 		fmt.Println(err)
-		return subcommands.ExitUsageError
+		//return subcommands.ExitUsageError
 	}
 
 	// show jwt contant
@@ -64,9 +64,6 @@ func decodeJWT(jwtStr, certPath string) (*jwt.Token, error) {
 	token, err := jwt.Parse(jwtStr, func(token *jwt.Token) (interface{}, error) {
 		return ReadCertificate(certPath)
 	})
-	if err != nil {
-		return nil, err
-	}
 	return token, err
 }
 

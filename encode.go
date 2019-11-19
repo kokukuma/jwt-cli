@@ -14,8 +14,15 @@ import (
 	"github.com/google/subcommands"
 )
 
+const ()
+
 type encodeCmd struct {
 	keyPath string
+	datPath string
+	alg     string
+	claims  map[string]string
+	iat     time.Time
+	exp     time.Time
 }
 
 func (*encodeCmd) Name() string     { return "encode" }
@@ -24,18 +31,31 @@ func (*encodeCmd) Usage() string    { return "encode <jwt>" }
 
 func (d *encodeCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&d.keyPath, "path", "/Users/kanotatsuya/tmp/php/key/ec.key", "private key path")
+	f.StringVar(&d.alg, "alg", "ES256", "signing method")
+
+	f.Var(newMapFlags(map[string]string{}, &d.claims), "claim", "jwt claim")
+
+	now := time.Now()
+	f.Var(newTimeFlag(now, &d.iat), "iat", "<2006-01-02T15:04:05>")
+	f.Var(newTimeFlag(time.Time{}, &d.exp), "exp", "<2006-01-02T15:04:05>")
 }
 
 func (d *encodeCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
-
-	iat := time.Now()
-	jwt, err := createJWT(map[string]interface{}{
+	if d.exp.Unix() < 0 {
+		d.exp = d.iat.Add(time.Second * 60)
+	}
+	claims := map[string]interface{}{
 		"iss": "kokukuma",
 		"aud": "kokukuma",
-		"iat": iat.Unix(),
-		"exp": iat.Add(time.Hour).Unix(),
+		"iat": d.iat.Unix(),
+		"exp": d.exp.Unix(),
 		"sub": "kokukuma",
-	}, "ES256", d.keyPath)
+	}
+	for k, v := range d.claims {
+		claims[k] = v
+	}
+
+	jwt, err := createJWT(claims, d.alg, d.keyPath)
 	if err != nil {
 		fmt.Println(err)
 		return subcommands.ExitFailure
