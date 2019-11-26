@@ -2,12 +2,8 @@ package main
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/x509"
-	"encoding/pem"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
@@ -17,8 +13,8 @@ import (
 const ()
 
 type encodeCmd struct {
+	key     string
 	keyPath string
-	datPath string
 	alg     string
 	claims  map[string]string
 	iat     time.Time
@@ -30,7 +26,8 @@ func (*encodeCmd) Synopsis() string { return "encode" }
 func (*encodeCmd) Usage() string    { return "encode <jwt>" }
 
 func (d *encodeCmd) SetFlags(f *flag.FlagSet) {
-	f.StringVar(&d.keyPath, "path", "/Users/kanotatsuya/tmp/php/key/ec.key", "private key path")
+	f.StringVar(&d.key, "key", "", "secret string for HMAC")
+	f.StringVar(&d.keyPath, "path", "", "private key path")
 	f.StringVar(&d.alg, "alg", "ES256", "signing method")
 
 	f.Var(newMapFlags(map[string]string{}, &d.claims), "claim", "jwt claim")
@@ -47,15 +44,21 @@ func (d *encodeCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{}
 	claims := map[string]interface{}{
 		"iss": "kokukuma",
 		"aud": "kokukuma",
+		"sub": "kokukuma",
 		"iat": d.iat.Unix(),
 		"exp": d.exp.Unix(),
-		"sub": "kokukuma",
 	}
 	for k, v := range d.claims {
 		claims[k] = v
 	}
 
-	jwt, err := createJWT(claims, d.alg, d.keyPath)
+	key, err := getKey(d.keyPath, d.key)
+	if err != nil {
+		fmt.Println(err)
+		return subcommands.ExitFailure
+	}
+
+	jwt, err := createJWT(claims, d.alg, key)
 	if err != nil {
 		fmt.Println(err)
 		return subcommands.ExitFailure
@@ -67,7 +70,7 @@ func (d *encodeCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{}
 	return subcommands.ExitSuccess
 }
 
-func createJWT(claims map[string]interface{}, alg string, keyPath string) (string, error) {
+func createJWT(claims map[string]interface{}, alg string, key interface{}) (string, error) {
 	jwtClaims := jwt.MapClaims(claims)
 	jwtAlg := jwt.GetSigningMethod(alg)
 
@@ -76,34 +79,9 @@ func createJWT(claims map[string]interface{}, alg string, keyPath string) (strin
 
 	token.Header["kid"] = "BF4R44V675"
 
-	privKey, err := loadP8Key(keyPath)
-	if err != nil {
-		return "", err
-	}
-	sig, err := token.SignedString(privKey)
+	sig, err := token.SignedString(key)
 	if err != nil {
 		return "", err
 	}
 	return sig, nil
-}
-
-func loadP8Key(path string) (*ecdsa.PrivateKey, error) {
-	raw, err := ioutil.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	block, _ := pem.Decode(raw)
-	der := block.Bytes
-
-	key, err := x509.ParsePKCS8PrivateKey(der)
-	if err != nil {
-		return nil, err
-	}
-
-	switch key := key.(type) {
-	case *ecdsa.PrivateKey:
-		return key, nil
-	default:
-		return nil, fmt.Errorf("Found unknown private key type in PKCS#8 wrapping")
-	}
 }

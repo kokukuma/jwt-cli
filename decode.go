@@ -2,12 +2,9 @@ package main
 
 import (
 	"context"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
@@ -16,6 +13,7 @@ import (
 
 type decodeCmd struct {
 	certPath string
+	key      string
 }
 
 func (*decodeCmd) Name() string     { return "decode" }
@@ -23,7 +21,8 @@ func (*decodeCmd) Synopsis() string { return "decode" }
 func (*decodeCmd) Usage() string    { return "decode <jwt>" }
 
 func (d *decodeCmd) SetFlags(f *flag.FlagSet) {
-	f.StringVar(&d.certPath, "path", "/Users/kanotatsuya/tmp/php/key/ec.crt", "public cert path")
+	f.StringVar(&d.certPath, "path", "", "public cert path")
+	f.StringVar(&d.key, "key", "", "secret string for HMAC")
 }
 
 func (d *decodeCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
@@ -33,12 +32,21 @@ func (d *decodeCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{}
 	}
 	jwtStr := f.Args()[0]
 
+	// key
+	key, err := getPubKey(d.certPath, d.key)
+	if err != nil {
+		fmt.Println(err)
+		return subcommands.ExitUsageError
+	}
+
 	// parse jwt
-	token, err := decodeJWT(jwtStr, d.certPath)
+	token, err := decodeJWT(jwtStr, key)
 	if err != nil {
 		fmt.Println(err)
 		//return subcommands.ExitUsageError
 	}
+
+	// TODO: 表示は別の所に切り出す
 
 	// show jwt contant
 	h, err := json.MarshalIndent(token.Header, "", " ")
@@ -57,27 +65,14 @@ func (d *decodeCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{}
 	if exp, ok := claims["exp"].(float64); ok {
 		fmt.Println("exp : ", time.Unix(int64(exp), 0))
 	}
+
+	fmt.Println("--- Signature")
 	return subcommands.ExitSuccess
 }
 
-func decodeJWT(jwtStr, certPath string) (*jwt.Token, error) {
+func decodeJWT(jwtStr string, key interface{}) (*jwt.Token, error) {
 	token, err := jwt.Parse(jwtStr, func(token *jwt.Token) (interface{}, error) {
-		return ReadCertificate(certPath)
+		return key, nil
 	})
 	return token, err
-}
-
-// ReadCertificate is used for read public key from file
-func ReadCertificate(certPath string) (interface{}, error) {
-	bytes, err := ioutil.ReadFile(certPath)
-	if err != nil {
-		return nil, err
-	}
-	block, _ := pem.Decode(bytes)
-	var cert *x509.Certificate
-	cert, err = x509.ParseCertificate(block.Bytes)
-	if err != nil {
-		return nil, err
-	}
-	return cert.PublicKey, nil
 }
